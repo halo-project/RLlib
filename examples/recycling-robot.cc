@@ -1,200 +1,156 @@
-
 #include <iostream>
-#include <random>
-
-#include "rl.hpp"
-
-// From Example 3.3 in Sutton & Barto.
-
-namespace act {
-enum class Action {
-  Wait=0,
-  Search=1,
-  Recharge=2
-};
-constexpr size_t Size = 3;
-const Action Begin = Action::Wait; // the one assigned to index 0
-
-std::string toString(Action a) {
-  switch (a) {
-    case Action::Wait:
-      return "WAIT";
-    case Action::Search:
-      return "SEARCH";
-    case Action::Recharge:
-      return "RECHARGE";
-  };
-  return "unknown#" + std::to_string(static_cast<size_t>(a));
-}
-} // end namespace act
-
-
-
-class Environment {
-  public:
-    enum {
-      size = 2,
-      start = 0,
-      goal = size-1
-    };
-
-    enum {
-      BatteryLow = 0,
-      BatteryHigh = 1
-    };
-
-  using phase_type = int;
-
-  static std::string toString(phase_type e) {
-    switch (e) {
-      case Environment::BatteryLow:
-        return "BatteryLow";
-      case Environment::BatteryHigh:
-        return "BatteryHigh";
-    };
-    return "unknown#" + std::to_string(static_cast<size_t>(e));
-  }
-};
-
-
-// for the robot. this name is kind of hard-coded.
-class Simulator {
-  public:
-  // required type aliases for rllib
-  using reward_type = double;
-  using observation_type = Environment::phase_type; // aka state_type
-  using action_type = act::Action;
-
-  const observation_type& sense() const {
-    return State;
-  }
-
-  reward_type reward() const { return LastActionReward; }
-
-  void timeStep(const action_type& Act) {
-
-    // TODO: actually perform the action!
-
-    std::cout << "took action " << act::toString(Act)
-              << ", yielding environment " << Environment::toString(State)
-              << ", with reward = " << LastActionReward
-              << "\n";
-  }
-
-  private:
-    observation_type State = Environment::start;
-    reward_type LastActionReward = 0.0;
-};
-
-
-
-// Definition of Reward, S, A, SA, Transition and TransitionSet.
-#include "example-defs-transition.hpp"
-
-
-
-///////////////////////////////////////////////
+#include <iomanip>
+#include <string>
+#include <array>
+#include <iterator>
 #include <gsl/gsl_vector.h>
 
+#include <rl.hpp>
 
-// a table-based parameterization of the q_pi(s,a) estimate for policy pi
-template<typename State, int NumStates, typename Action, int NumActions>
-class QTable {
-  public:
-  QTable() {
-    size_t Card = NumStates * NumActions;
-    assert(Card > 0);
-    theta = gsl_vector_alloc(Card);
-    gsl_vector_set_zero(theta);
-  }
+class Action {
+public:
+    enum Kind {
+        Wait=0,
+        Search=1,
+        Recharge=2
+    };
+    using type = Kind;
+    static constexpr size_t size = 3;
+    static const Kind begin = Kind::Wait; // the one assigned to index 0
 
-  ~QTable() {
-    gsl_vector_free(theta);
-  }
-
-  double operator()(State s, Action a) const {
-    return Q(theta, s, a);
-  }
-
-  gsl_vector* getTable() { return theta; }
-
-  // NOTE: for some reason theta needs to be given, but is not used.
-  static void GradQ(const gsl_vector* theta, gsl_vector* grad_theta_sa, State s, Action a) {
-    assert(grad_theta_sa->size > 0);
-    gsl_vector_set_basis(grad_theta_sa, ComputeIndex(s, a));
-  }
-
-  static double Q(const gsl_vector* theta, State s, Action a) {
-    assert(theta->size > 0);
-    return gsl_vector_get(theta, ComputeIndex(s, a));
-  }
-
-  private:
-
-  static size_t ComputeIndex(State s, Action a) {
-    #ifndef NDBUG
-      std::cerr << "access of Q("
-                << Environment::toString(s) << ", " << act::toString(a) << ")\n";
-    #endif
-
-    int aInt = static_cast<int>(a);
-    assert(0 <= s && s < NumStates && "invalid state");
-    assert(0 <= aInt && aInt < NumActions && "invalid action");
-
-    // for now, assuming state and action can be mapped to a table index via a cast to size_t
-    return aInt * NumStates + s;
-  }
-
-  gsl_vector* theta;
+    static std::string to_string(Kind K) {
+        switch (K) {
+            case Wait: return "Wait";
+            case Search: return "Search";
+            case Recharge: return "Recharge";
+            default: return "???";
+        };
+    }
 };
 
-////////////////////////////////////////////////
+class World {
+public:
+    // standard, required members
+    enum Kind {
+        HighBattery=0,
+        LowBattery=1
+    };
+    using type = Kind;
+    static constexpr type begin = HighBattery; // the one assigned to index 0
+    static constexpr type initial = HighBattery; // the starting phase for running a simulation.
+    static constexpr int size = 2;
 
-#include <random>
+    static std::string to_string(Kind K) {
+        switch (K) {
+            case HighBattery: return "HighBattery";
+            case LowBattery: return "LowBattery";
+            default: return "???";
+        };
+    }
+};
 
-template<typename CRITIC,typename Q, typename RANDOM_GENERATOR>
-void run_experiment(CRITIC& critic, const Q& q, RANDOM_GENERATOR& gen,
-                    const double EPSILON, int NumEpisodes) {
-  Simulator Sim;
-  int MaxEpisodeSteps = 10;
-  double CurrentEpsilon = EPSILON;
+class RobotSimulator : public rl::Simulator<World, Action> {
+public:
+    RobotSimulator() : rl::Simulator<World, Action>(0.0, World::initial) {}
 
-  // TODO: these iterators should be part of the Q table!!
-  using ActionIteratorTy = rl::enumerator<Simulator::action_type>;
-  auto action_begin = ActionIteratorTy(act::Begin);
-  auto action_end = action_begin + act::Size;
+    void timeStep(const action_type &a) override {
 
-  // using StateIteratorTy = rl::enumerator<Simulator::observation_type>;
-  // auto state_begin  = StateIteratorTy(env::Begin);
-  // auto state_end    = state_begin + env::Size;
+    }
+};
 
-  auto learning_policy  = rl::policy::epsilon_greedy<Q, ActionIteratorTy, RANDOM_GENERATOR>
-                            (q, CurrentEpsilon, action_begin, action_end, gen);
+// Let us define the parameters.
+#define paramGAMMA   .99
+#define paramALPHA   .05
+#define paramEPSILON .7
 
-  for (int epi = 0; epi < NumEpisodes; epi++) {
-    // Sim.restart();
-    rl::episode::learn(Sim, learning_policy, critic, MaxEpisodeSteps);
-  }
+
+
+// use basic SARSA on-policy
+int main(int argc, char* argv[]) {
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+
+    // some type defs
+    using Reward = RobotSimulator::reward_type;
+    using S =  RobotSimulator::observation_type;
+    using A = RobotSimulator::action_type;
+    using TableTy = rl::gsl::QTable<S, World::size, A, Action::size>;
+
+    // We need to provide iterators for enumerating all the state and action
+    // values. This can be done easily from an enumerators.
+    auto action_begin = rl::enumerator<A>(Action::begin);
+    auto action_end   = action_begin + Action::size;
+    // auto state_begin  = rl::enumerator<S>(World::begin);
+    // auto state_end    = state_begin + World::size;
+
+
+    // This is the dynamical system we want to control.
+    // Param      param;
+    RobotSimulator  simulator;
+    TableTy Table;
+
+    gsl_vector* theta = Table.getTable();
+    auto q = Table.curriedQ();
+
+    // Let us now define policies, related to q. The learning policy
+    // used is an epsilon-greedy one in the following, while we test the
+    // learned Q-function with a geedy policy.
+    double epsilon       = paramEPSILON;
+    auto learning_policy = rl::policy::epsilon_greedy(q,epsilon,action_begin,action_end, gen);
+    auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
+
+    // We intend to learn q on-line, by running episodes, and updating a
+    // critic from the transition we get during the episodes. Let us use
+    // some GSL-based critic for that purpose.
+    auto critic = rl::gsl::sarsa<S,A>(theta,
+            paramGAMMA,paramALPHA,
+            TableTy::Q,
+            TableTy::GradQ);
+
+    // We have now all the elements to start experiments.
+
+
+    // Let us run episodes with the agent that learns the Q-values.
+    const int MAX_EPISODE_LENGTH = 10; // was 0 for unbounded until it reaches a terminal state.
+    const int MAX_EPISODES = 1000; // was 10000
+    std::cout << "Learning " << std::endl
+        << std::endl;
+
+    int episode;
+    for(episode = 0; episode < MAX_EPISODES; ++episode) {
+        simulator.restart();
+        auto actual_episode_length = rl::episode::learn(simulator,learning_policy,critic,
+                MAX_EPISODE_LENGTH);
+        if(episode % 200 == 0)
+            std::cout << "episode " << std::setw(5) << episode+1
+                << " : length = " << std::setw(5) << actual_episode_length << std::endl;
+    }
+    std::cout << std::endl;
+
+    // Let us print the parameters. This can be dumped in a file, rather
+    // than printed, for saving the learned Q-value function.
+    std::cout << "Learned theta : " << std::endl
+        << std::endl
+        << theta << std::endl
+        << std::endl;
+
+    // We can also gather the transitions from an episode into a collection.
+    using TransitionTy = rl::Transition<World, Action, Reward>;
+    std::vector<TransitionTy> transition_set;
+    simulator.restart();
+    unsigned int nb_steps = rl::episode::run(simulator,test_policy,
+            std::back_inserter(transition_set),
+            TransitionTy::make,TransitionTy::make_terminal,
+            MAX_EPISODE_LENGTH);
+    std::cout << std::endl
+        << "Collected transitions :" << std::endl
+        << "---------------------" << std::endl
+        << nb_steps << " == " << transition_set.size() << std::endl
+        << std::endl;
+    for(auto& t : transition_set)
+        std::cout << t << std::endl;
+
+    return 0;
 }
 
-// this one uses SARSA (on-policy)
-// NOTE: compile with,
-//    g++ -I../src -std=c++17 recycling-robot.cc -lgsl
-//
-int main () {
-  std::random_device rd;
-  std::mt19937 gen(rd());
-  using TableTy = QTable<Environment::phase_type, Environment::size, act::Action, act::Size>;
-  TableTy Q;
-
-  const double GAMMA = .9;
-  const double ALPHA = .05;
-  const double EPSILON = .2;
-
-  auto critic = rl::gsl::sarsa<S,A>(Q.getTable(),
-          GAMMA,ALPHA,
-          TableTy::Q,
-          TableTy::GradQ);
-
-  run_experiment(critic, Q, gen, EPSILON, 1);
-}
