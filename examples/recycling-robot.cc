@@ -34,7 +34,8 @@ class Environment {
   public:
     enum {
       size = 2,
-      start = 0
+      start = 0,
+      goal = size-1
     };
 
     enum {
@@ -101,7 +102,9 @@ template<typename State, int NumStates, typename Action, int NumActions>
 class QTable {
   public:
   QTable() {
-    theta = gsl_vector_alloc(NumStates * NumActions);
+    size_t Card = NumStates * NumActions;
+    assert(Card > 0);
+    theta = gsl_vector_alloc(Card);
     gsl_vector_set_zero(theta);
   }
 
@@ -117,32 +120,29 @@ class QTable {
 
   // NOTE: for some reason theta needs to be given, but is not used.
   static void GradQ(const gsl_vector* theta, gsl_vector* grad_theta_sa, State s, Action a) {
-    assert(grad_theta_sa != nullptr);
+    assert(grad_theta_sa->size > 0);
     gsl_vector_set_basis(grad_theta_sa, ComputeIndex(s, a));
   }
 
   static double Q(const gsl_vector* theta, State s, Action a) {
-    assert(theta != nullptr);
-    std::cerr << "Q size = " << theta->size << "\n";
+    assert(theta->size > 0);
     return gsl_vector_get(theta, ComputeIndex(s, a));
   }
 
   private:
 
   static size_t ComputeIndex(State s, Action a) {
-    // for now, assuming state and action can be mapped to a table index via a cast to size_t
     #ifndef NDBUG
       std::cerr << "access of Q("
                 << Environment::toString(s) << ", " << act::toString(a) << ")\n";
     #endif
 
-    assert(s < NumStates && "invalid state");
-    assert(static_cast<int>(a) < NumActions && "invalid action");
+    int aInt = static_cast<int>(a);
+    assert(0 <= s && s < NumStates && "invalid state");
+    assert(0 <= aInt && aInt < NumActions && "invalid action");
 
-    size_t Index = static_cast<int>(a) * NumStates + s;
-
-    std::cerr << "Index = " << Index << "\n";
-    return Index;
+    // for now, assuming state and action can be mapped to a table index via a cast to size_t
+    return aInt * NumStates + s;
   }
 
   gsl_vector* theta;
