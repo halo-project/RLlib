@@ -9,10 +9,49 @@
 #include <rl.hpp>
 
 // These are useful typedefs
+class World {
+public:
+    // standard, required members
+    using phase_type = int;
+    static constexpr int size = 50;
+    static constexpr phase_type start = 0;
+};
 
-typedef rl::problem::cliff_walking::Cliff<10,5>             Cliff;      // World size.
-typedef rl::problem::cliff_walking::Param                    Param;      // The default parameters (reward values).
-typedef rl::problem::cliff_walking::Simulator<Cliff,Param>   Simulator;  // This is the dynamical system to control.
+// for the robot. this name is kind of hard-coded.
+class Simulator {
+  public:
+  // standard, required members
+  using reward_type = double;
+  using observation_type = World::phase_type; // aka state_type
+  using action_type = rl::problem::cliff_walking::Action;
+
+  const observation_type& sense() const {
+    return State;
+  }
+
+  reward_type reward() const { return LastActionReward; }
+
+  void timeStep(const action_type& Act) {
+
+    // TODO: actually perform the action!
+
+    std::cout << "took action " << static_cast<int>(Act)
+              << ", yielding environment " << State
+              << ", with reward = " << LastActionReward
+              << "\n";
+  }
+
+  // I think these members are _not_ required to use the library
+  // but are useful for episodic tasks.
+  void restart() {
+      State = World::start;
+  }
+
+  private:
+    observation_type State = World::start;
+    reward_type LastActionReward = 0.0;
+};
+
 typedef Simulator::reward_type                               Reward;
 typedef Simulator::observation_type                          S;
 typedef Simulator::action_type                               A;
@@ -75,7 +114,7 @@ Transition make_terminal_transition(S s, A a, Reward r) {
 // simulator, actions are consecutive enum values starting from
 // 0. This simplifies the TABULAR_Q_RANK macro. States start from 0 as
 // well.
-#define S_CARDINALITY         Cliff::size
+#define S_CARDINALITY         World::size
 #define A_CARDINALITY         rl::problem::cliff_walking::actionSize
 #define TABULAR_Q_CARDINALITY S_CARDINALITY*A_CARDINALITY  // Array size for storing the Q[s,a].
 #define TABULAR_Q_RANK(s,a)   (static_cast<int>(a)*S_CARDINALITY+s)            // Index of the Q[s,a] value in the monodimentional array.
@@ -112,13 +151,13 @@ int main(int argc, char* argv[]) {
     // values. This can be done easily from an enumerators.
     auto action_begin = rl::enumerator<A>(rl::problem::cliff_walking::Action::actionNorth);
     auto action_end   = action_begin + rl::problem::cliff_walking::actionSize;
-    auto state_begin  = rl::enumerator<S>(Cliff::start);
-    auto state_end    = state_begin + Cliff::size;
+    auto state_begin  = rl::enumerator<S>(World::start);
+    auto state_end    = state_begin + World::size;
 
 
     // This is the dynamical system we want to control.
-    Param      param;
-    Simulator  simulator(param);
+    // Param      param;
+    Simulator  simulator;
 
     // Our Q-function is determined by some vector parameter. It is a
     // gsl_vector since we use the GSL-based algorithm provided by the
@@ -150,15 +189,16 @@ int main(int argc, char* argv[]) {
 
 
     // Let us run 10000 episodes with the agent that learns the Q-values.
-
+    const int MAX_EPISODE_LENGTH = 10; // was 0 for unbounded until it reaches a terminal state.
+    const int MAX_EPISODES = 100; // was 10000
     std::cout << "Learning " << std::endl
         << std::endl;
 
     int episode;
-    for(episode = 0; episode < 10000; ++episode) {
+    for(episode = 0; episode < MAX_EPISODES; ++episode) {
         simulator.restart();
         auto actual_episode_length = rl::episode::learn(simulator,learning_policy,critic,
-                0);
+                MAX_EPISODE_LENGTH);
         if(episode % 200 == 0)
             std::cout << "episode " << std::setw(5) << episode+1
                 << " : length = " << std::setw(5) << actual_episode_length << std::endl;
@@ -174,38 +214,41 @@ int main(int argc, char* argv[]) {
 
 
     // Let us define v as v(s) = max_a q(s_a) with a labda function.
-    auto v = [&action_begin,&action_end,&q](S s) -> double {return rl::max(std::bind(q,s,_1),
-            action_begin,
-            action_end);};
-    // We can draw the Value function a image file.
-    auto v_range = rl::range(v,state_begin,state_end);
-    std::cout << std::endl
-        << " V in [" << v_range.first << ',' << v_range.second << "]." << std::endl
-        << std::endl;
-    Cliff::draw("V-overview",0,v,v_range.first,v_range.second);
-    std::cout << "Image file \"V-overview-000000.ppm\" generated." << std::endl
-        << std::endl;
+    // auto v = [&action_begin,&action_end,&q](S s) -> double {return rl::max(std::bind(q,s,_1),
+    //         action_begin,
+    //         action_end);};
+    // // We can draw the Value function a image file.
+    // auto v_range = rl::range(v,state_begin,state_end);
+    // std::cout << std::endl
+    //     << " V in [" << v_range.first << ',' << v_range.second << "]." << std::endl
+    //     << std::endl;
+    // // World::draw("V-overview",0,v,v_range.first,v_range.second);
+    // std::cout << "Image file \"V-overview-000000.ppm\" generated." << std::endl
+    //     << std::endl;
+
+
+    return 0;
 
     // Let us be greedy on the policy we have found, using the greedy
     // agent to run an episode.
-    simulator.restart();
-    unsigned int nb_steps = rl::episode::run(simulator,test_policy,0);
-    std::cout << "Best policy episode ended after " << nb_steps << " steps." << std::endl;
+    // simulator.restart();
+    // unsigned int nb_steps = rl::episode::run(simulator,test_policy,0);
+    // std::cout << "Best policy episode ended after " << nb_steps << " steps." << std::endl;
 
-    // We can also gather the transitions from an episode into a collection.
-    std::vector<Transition> transition_set;
-    simulator.restart();
-    nb_steps = rl::episode::run(simulator,test_policy,
-            std::back_inserter(transition_set),
-            make_transition,make_terminal_transition,
-            0);
-    std::cout << std::endl
-        << "Collected transitions :" << std::endl
-        << "---------------------" << std::endl
-        << nb_steps << " == " << transition_set.size() << std::endl
-        << std::endl;
-    for(auto& t : transition_set)
-        std::cout << t << std::endl;
+    // // We can also gather the transitions from an episode into a collection.
+    // std::vector<Transition> transition_set;
+    // simulator.restart();
+    // nb_steps = rl::episode::run(simulator,test_policy,
+    //         std::back_inserter(transition_set),
+    //         make_transition,make_terminal_transition,
+    //         0);
+    // std::cout << std::endl
+    //     << "Collected transitions :" << std::endl
+    //     << "---------------------" << std::endl
+    //     << nb_steps << " == " << transition_set.size() << std::endl
+    //     << std::endl;
+    // for(auto& t : transition_set)
+    //     std::cout << t << std::endl;
 
 
     gsl_vector_free(theta);
