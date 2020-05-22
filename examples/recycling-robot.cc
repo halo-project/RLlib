@@ -73,14 +73,13 @@ public:
                         ? transition(World::HighBattery, RewardSearch)
                         : transition(World::LowBattery, RewardSearch);
 
-            if (a == Action::Wait)
+            // NOTE: while recharging during a high-battery situation is technically
+            // invalid, we can't tell rllib that currently. for now lets treat it
+            // as a wait.
+            if (a == Action::Wait || a == Action::Recharge)
                 return trueWithProbability(1.0)
                         ? transition(World::HighBattery, RewardWait)
                         : transition(World::LowBattery, RewardWait);
-
-            if (a == Action::Recharge)
-                // TODO: should we give a penalty or return "bad action" for this case?? will the runner understand?
-                return transition(World::HighBattery, RewardBatteryDie);
 
         } else if (State == World::LowBattery) {
 
@@ -111,7 +110,7 @@ private:
 
     // probabilities to adjust the model
     double alpha = .95; // probabilty of battery remaining high while searching in high state
-    double beta = .45; // probability of battery remaining low while searching in low state
+    double beta = .6; // probability of battery remaining low while searching in low state
 
     reward_type RewardSearch = 1.; // r_search
     reward_type RewardWait = .0; // r_wait
@@ -160,9 +159,9 @@ int main(int argc, char* argv[]) {
     double epsilon       = paramEPSILON;
     auto learning_policy = rl::policy::epsilon_greedy(q,epsilon,action_begin,action_end, gen);
 
-    // auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
-    double test_epsilon = 0.9;
-    auto test_policy = rl::policy::epsilon_greedy(q,test_epsilon,action_begin,action_end, gen);
+    auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
+    // double test_epsilon = 0.9;
+    // auto test_policy = rl::policy::epsilon_greedy(q,test_epsilon,action_begin,action_end, gen);
 
 
     // We intend to learn q on-line, by running episodes, and updating a
@@ -177,14 +176,14 @@ int main(int argc, char* argv[]) {
 
 
     // Let us run episodes with the agent that learns the Q-values.
-    const int MAX_EPISODE_LENGTH = 1000; // was 0 for unbounded until it reaches a terminal state.
-    const int MAX_EPISODES = 20000; // was 10000
+    const int MAX_EPISODE_LENGTH = 50; // was 0 for unbounded until it reaches a terminal state.
+    const int MAX_EPISODES = 5000; // was 10000
     std::cout << "Learning " << std::endl
         << std::endl;
 
     int episode;
     for(episode = 0; episode < MAX_EPISODES; ++episode) {
-        simulator.restart();
+        // simulator.restart(); // only needed if there's an actual terminal state in the simulator
         auto actual_episode_length = rl::episode::learn(simulator,learning_policy,critic,
                 MAX_EPISODE_LENGTH);
         if(episode % 200 == 0)
