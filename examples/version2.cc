@@ -5,9 +5,6 @@
 #include <iterator>
 #include <gsl/gsl_vector.h>
 
-#include "QTable.h"
-#include "Transition.h"
-
 #include <rl.hpp>
 
 class Action {
@@ -31,14 +28,25 @@ public:
     }
 };
 
-// These are useful typedefs
 class World {
 public:
     // standard, required members
-    using phase_type = int;
-    static constexpr phase_type begin = 0; // the one assigned to index 0
-    static constexpr phase_type initial = 0; // the starting phase for running a simulation.
+    enum Kind {
+        HighBattery=0,
+        LowBattery=1
+    };
+    using type = Kind;
+    static constexpr type begin = HighBattery; // the one assigned to index 0
+    static constexpr type initial = HighBattery; // the starting phase for running a simulation.
     static constexpr int size = 2;
+
+    static std::string to_string(Kind K) {
+        switch (K) {
+            case HighBattery: return "HighBattery";
+            case LowBattery: return "LowBattery";
+            default: return "???";
+        };
+    }
 };
 
 // for the robot. this name is kind of hard-coded.
@@ -46,7 +54,7 @@ class Simulator {
   public:
   // standard, required members
   using reward_type = double;
-  using observation_type = World::phase_type; // aka state_type
+  using observation_type = World::type; // aka phase_type or state_type
   using action_type = Action::type;
 
   const observation_type& sense() const {
@@ -72,10 +80,6 @@ class Simulator {
     reward_type LastActionReward = 0.0;
 };
 
-typedef Simulator::reward_type                               Reward;
-typedef Simulator::observation_type                          S;
-typedef Simulator::action_type                               A;
-
 // Let us define the parameters.
 #define paramGAMMA   .99
 #define paramALPHA   .05
@@ -89,6 +93,12 @@ int main(int argc, char* argv[]) {
     std::random_device rd;
     std::mt19937 gen(rd());
 
+    // some type defs
+    using Reward = Simulator::reward_type;
+    using S =  Simulator::observation_type;
+    using A = Simulator::action_type;
+    using TableTy = rl::gsl::QTable<S, World::size, A, Action::size>;
+
     // We need to provide iterators for enumerating all the state and action
     // values. This can be done easily from an enumerators.
     auto action_begin = rl::enumerator<A>(Action::begin);
@@ -100,7 +110,6 @@ int main(int argc, char* argv[]) {
     // This is the dynamical system we want to control.
     // Param      param;
     Simulator  simulator;
-    using TableTy = QTable<S, World::size, A, Action::size>;
     TableTy Table;
 
     gsl_vector* theta = Table.getTable();
@@ -149,7 +158,7 @@ int main(int argc, char* argv[]) {
         << std::endl;
 
     // We can also gather the transitions from an episode into a collection.
-    using TransitionTy = Transition<S, Action, Reward>;
+    using TransitionTy = rl::Transition<World, Action, Reward>;
     std::vector<TransitionTy> transition_set;
     simulator.restart();
     unsigned int nb_steps = rl::episode::run(simulator,test_policy,
