@@ -38,10 +38,10 @@ class Simulator {
   reward_type reward() const { return LastActionReward; }
 
   protected:
-    observation_type InitialState;
+    const observation_type InitialState;
     observation_type State; // what is returned by sense()
 
-    reward_type InitialReward;
+    const reward_type InitialReward;
     reward_type LastActionReward; // what is returned by reward()
 };
 
