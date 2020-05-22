@@ -8,13 +8,23 @@
 // This is the rl header
 #include <rl.hpp>
 
+namespace act {
+    enum class Action {
+        Wait=0,
+        Search=1,
+        Recharge=2
+    };
+    constexpr size_t size = 3;
+    const Action begin = Action::Wait; // the one assigned to index 0
+} // end namespace act
+
 // These are useful typedefs
 class World {
 public:
     // standard, required members
     using phase_type = int;
-    static constexpr int size = 50;
     static constexpr phase_type start = 0;
+    static constexpr int size = 50;
 };
 
 // for the robot. this name is kind of hard-coded.
@@ -23,7 +33,7 @@ class Simulator {
   // standard, required members
   using reward_type = double;
   using observation_type = World::phase_type; // aka state_type
-  using action_type = rl::problem::cliff_walking::Action;
+  using action_type = act::Action;
 
   const observation_type& sense() const {
     return State;
@@ -67,33 +77,11 @@ struct Transition {
     bool   is_terminal;
 };
 
-std::string string_of_action(A a) {
-    std::string res;
-    switch(a) {
-        case rl::problem::cliff_walking::Action::actionNorth: res = "North"; break;
-        case rl::problem::cliff_walking::Action::actionSouth: res = "South"; break;
-        case rl::problem::cliff_walking::Action::actionEast:  res = "East "; break;
-        case rl::problem::cliff_walking::Action::actionWest:  res = "West "; break;
-        default:                                      res = "?????";
-    }
-    return res;
-}
-
-// This prints a transition.
-std::ostream& operator<<(std::ostream& os, const Transition& t) {
-    os << std::setw(3) << t.s  << ' ' << string_of_action(t.a)
-        << " ---" << std::setw(5) << t.r << " ---> ";
-    if(t.is_terminal)
-        os << "End-of-Episode";
-    else
-        os << std::setw(3) << t.s_;
-    return os;
-}
-
 // This functions makes a transition from its elements.
 Transition make_transition(S s, A a, Reward r, S s_) {
     return {s,a,r,s_,false};
 }
+
 Transition make_terminal_transition(S s, A a, Reward r) {
     return {s,a,r,s /* unused */,true};
 }
@@ -115,7 +103,7 @@ Transition make_terminal_transition(S s, A a, Reward r) {
 // 0. This simplifies the TABULAR_Q_RANK macro. States start from 0 as
 // well.
 #define S_CARDINALITY         World::size
-#define A_CARDINALITY         rl::problem::cliff_walking::actionSize
+#define A_CARDINALITY         act::size
 #define TABULAR_Q_CARDINALITY S_CARDINALITY*A_CARDINALITY  // Array size for storing the Q[s,a].
 #define TABULAR_Q_RANK(s,a)   (static_cast<int>(a)*S_CARDINALITY+s)            // Index of the Q[s,a] value in the monodimentional array.
 
@@ -149,8 +137,8 @@ int main(int argc, char* argv[]) {
 
     // We need to provide iterators for enumerating all the state and action
     // values. This can be done easily from an enumerators.
-    auto action_begin = rl::enumerator<A>(rl::problem::cliff_walking::Action::actionNorth);
-    auto action_end   = action_begin + rl::problem::cliff_walking::actionSize;
+    auto action_begin = rl::enumerator<A>(act::begin);
+    auto action_end   = action_begin + act::size;
     auto state_begin  = rl::enumerator<S>(World::start);
     auto state_end    = state_begin + World::size;
 
