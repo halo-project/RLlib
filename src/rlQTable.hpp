@@ -5,6 +5,8 @@
 #include <memory>
 #include <gsl/gsl_vector.h>
 
+namespace rl {
+namespace gsl {
 
 /// a table-based parameterization of the q_pi(s,a) estimate for policy pi
 template<typename State, int NumStates, typename Action, int NumActions>
@@ -40,13 +42,13 @@ class QTable {
   /// provides a pointer to the Q table, but does NOT pass ownership!
   gsl_vector* getTable() { return theta; }
 
-  // NOTE: for some reason, theta needs to be given, but it is not used.
+  /// gradient table access, not specific to a particular gradient table
   static void GradQ(const gsl_vector* theta, gsl_vector* grad_theta_sa, State s, Action a) {
     assert(grad_theta_sa && grad_theta_sa->size > 0 && "invalid / freed vector");
     gsl_vector_set_basis(grad_theta_sa, ComputeIndex(s, a));
   }
 
-  // table access, not specific to a table
+  /// table access, not specific to a particular table
   static double Q(const gsl_vector* theta, State s, Action a) {
     assert(theta && theta->size > 0 && "invalid / freed vector");
     return gsl_vector_get(theta, ComputeIndex(s, a));
@@ -66,4 +68,5 @@ class QTable {
   gsl_vector* theta;
 };
 
-////////////////////////////////////////////////
+} // end namespace gsl
+} // end namespace rl

@@ -38,9 +38,11 @@
 #include <rlOffPAPI.hpp>
 #include <rlPolicy.hpp>
 #include <rlQLearning.hpp>
+#include <rlQTable.hpp>
 #include <rlSARSA.hpp>
 #include <rlTD.hpp>
 #include <rlActorCritic.hpp>
+#include <rlTransition.hpp>
 #include <rlTypes.hpp>
 
 /////
