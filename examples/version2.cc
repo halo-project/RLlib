@@ -5,6 +5,8 @@
 #include <iterator>
 #include <gsl/gsl_vector.h>
 
+#include "QTable.h"
+
 // This is the rl header
 #include <rl.hpp>
 
@@ -91,45 +93,9 @@ Transition make_terminal_transition(S s, A a, Reward r) {
 #define paramALPHA   .05
 #define paramEPSILON .7
 
-// The Q-function is tabular, i.e. the Q(s,a) values are stored in a
-// vector. As the rllib is oriented toward function approximation for
-// Q functions, dealing with some tabular representation requires an
-// encapsulation of the table, since a tabular representation is a
-// specific case of a more general function representation.
-
-// These are definitions for associating the index in a
-// monodimentional array to an (s,a) pair. For the cliff-walking
-// simulator, actions are consecutive enum values starting from
-// 0. This simplifies the TABULAR_Q_RANK macro. States start from 0 as
-// well.
-#define S_CARDINALITY         World::size
-#define A_CARDINALITY         act::size
-#define TABULAR_Q_CARDINALITY S_CARDINALITY*A_CARDINALITY  // Array size for storing the Q[s,a].
-#define TABULAR_Q_RANK(s,a)   (static_cast<int>(a)*S_CARDINALITY+s)            // Index of the Q[s,a] value in the monodimentional array.
-
-// This method simply retrives a q value from a gsl vector.
-double q_parametrized(const gsl_vector* theta,
-        S s, A a) {
-    return gsl_vector_get(theta,TABULAR_Q_RANK(s,a));
-}
-
-// In the Q-Learning algorithm, updates are made according to the
-// gradient of the Q-function according to its parameters, taken at
-// some specific (s,a) value. With a tabular coding here, this
-// gradient is straightforward, since it is a (00..00100..00) vector
-// with a 1 at the (s,a) rank position.
-void grad_q_parametrized(const gsl_vector* theta,
-        gsl_vector* grad_theta_sa,
-        S s, A a) {
-    gsl_vector_set_basis(grad_theta_sa,TABULAR_Q_RANK(s,a));
-}
 
 
-using namespace std::placeholders;
-
-
-
-// Let us start some experiment
+// use basic SARSA on-policy
 int main(int argc, char* argv[]) {
 
     std::random_device rd;
@@ -146,17 +112,20 @@ int main(int argc, char* argv[]) {
     // This is the dynamical system we want to control.
     // Param      param;
     Simulator  simulator;
+    using TableTy = QTable<S, World::size, A, act::size>;
+    TableTy Table;
 
     // Our Q-function is determined by some vector parameter. It is a
     // gsl_vector since we use the GSL-based algorithm provided by the
     // library.
-    gsl_vector* theta = gsl_vector_alloc(TABULAR_Q_CARDINALITY);
-    gsl_vector_set_zero(theta);
+    // gsl_vector* theta = gsl_vector_alloc(TABULAR_Q_CARDINALITY);
+    // gsl_vector_set_zero(theta);
+    gsl_vector* theta = Table.getTable();
 
     // If we need to use the Q-function parametrized by theta as q(s,a),
     // we only have to bind our q_from_table function and get a
     // functional object.
-    auto q = std::bind(q_parametrized,theta,_1,_2);
+    auto q = Table.curriedQ();
 
     // Let us now define policies, related to q. The learning policy
     // used is an epsilon-greedy one in the following, while we test the
@@ -170,15 +139,15 @@ int main(int argc, char* argv[]) {
     // some GSL-based critic for that purpose.
     auto critic = rl::gsl::sarsa<S,A>(theta,
             paramGAMMA,paramALPHA,
-            q_parametrized,
-            grad_q_parametrized);
+            TableTy::Q,
+            TableTy::GradQ);
 
     // We have now all the elements to start experiments.
 
 
     // Let us run 10000 episodes with the agent that learns the Q-values.
     const int MAX_EPISODE_LENGTH = 10; // was 0 for unbounded until it reaches a terminal state.
-    const int MAX_EPISODES = 100; // was 10000
+    const int MAX_EPISODES = 1000; // was 10000
     std::cout << "Learning " << std::endl
         << std::endl;
 
@@ -237,9 +206,6 @@ int main(int argc, char* argv[]) {
     //     << std::endl;
     // for(auto& t : transition_set)
     //     std::cout << t << std::endl;
-
-
-    gsl_vector_free(theta);
-    return 0;
+    // return 0;
 }
 
