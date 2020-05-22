@@ -13,6 +13,7 @@ enum class Action {
   Recharge=2
 };
 constexpr size_t Size = 3;
+const Action Begin = Action::Wait; // the one assigned to index 0
 
 std::string toString(Action a) {
   switch (a) {
@@ -23,33 +24,36 @@ std::string toString(Action a) {
     case Action::Recharge:
       return "RECHARGE";
   };
-  return "???";
+  return "unknown#" + std::to_string(static_cast<size_t>(a));
 }
 } // end namespace act
 
 
 
-namespace env {
-// "observation corresponding to current phase"
-// where phase is a term for "state of environment"
-// rllib names uses phase instead of state to avoid
-// some sort of confusion with the internal RL model.
-enum class Environment {
-  BatteryLow = 0,
-  BatteryHigh = 1
-};
-constexpr size_t Size = 2;
+class Environment {
+  public:
+    enum {
+      size = 2,
+      start = 0
+    };
 
-std::string toString(Environment e) {
-  switch (e) {
-    case Environment::BatteryLow:
-      return "BatteryLow";
-    case Environment::BatteryHigh:
-      return "BatteryHigh";
-  };
-  return "???";
-}
-} // end namespace env
+    enum {
+      BatteryLow = 0,
+      BatteryHigh = 1
+    };
+
+  using phase_type = int;
+
+  static std::string toString(phase_type e) {
+    switch (e) {
+      case Environment::BatteryLow:
+        return "BatteryLow";
+      case Environment::BatteryHigh:
+        return "BatteryHigh";
+    };
+    return "unknown#" + std::to_string(static_cast<size_t>(e));
+  }
+};
 
 
 // for the robot. this name is kind of hard-coded.
@@ -57,7 +61,7 @@ class Simulator {
   public:
   // required type aliases for rllib
   using reward_type = double;
-  using observation_type = env::Environment; // aka state_type
+  using observation_type = Environment::phase_type; // aka state_type
   using action_type = act::Action;
 
   const observation_type& sense() const {
@@ -71,13 +75,14 @@ class Simulator {
     // TODO: actually perform the action!
 
     std::cout << "took action " << act::toString(Act)
-              << ", yielding environment" << env::toString(State)
-              << ", with reward = " << LastActionReward;
+              << ", yielding environment " << Environment::toString(State)
+              << ", with reward = " << LastActionReward
+              << "\n";
   }
 
   private:
-    observation_type State;
-    reward_type LastActionReward;
+    observation_type State = Environment::start;
+    reward_type LastActionReward = 0.0;
 };
 
 
@@ -104,33 +109,73 @@ class QTable {
     gsl_vector_free(theta);
   }
 
-  double operator()(State s, Action a) {
+  double operator()(State s, Action a) const {
     return Q(theta, s, a);
   }
 
   gsl_vector* getTable() { return theta; }
 
-  // for now, assuming state and action can be mapped to a table index via a cast to size_t
-  #define TABLE_SELECT(s,a)   (static_cast<size_t>(a)*NumStates+static_cast<size_t>(s))
-
   // NOTE: for some reason theta needs to be given, but is not used.
   static void GradQ(const gsl_vector* theta, gsl_vector* grad_theta_sa, State s, Action a) {
-    gsl_vector_set_basis(grad_theta_sa, TABLE_SELECT(s,a));
+    assert(grad_theta_sa != nullptr);
+    gsl_vector_set_basis(grad_theta_sa, ComputeIndex(s, a));
   }
 
   static double Q(const gsl_vector* theta, State s, Action a) {
-    return gsl_vector_get(theta, TABLE_SELECT(s,a));
+    assert(theta != nullptr);
+    std::cerr << "Q size = " << theta->size << "\n";
+    return gsl_vector_get(theta, ComputeIndex(s, a));
   }
 
-  #undef TABLE_SELECT
-
   private:
+
+  static size_t ComputeIndex(State s, Action a) {
+    // for now, assuming state and action can be mapped to a table index via a cast to size_t
+    #ifndef NDBUG
+      std::cerr << "access of Q("
+                << Environment::toString(s) << ", " << act::toString(a) << ")\n";
+    #endif
+
+    assert(s < NumStates && "invalid state");
+    assert(static_cast<int>(a) < NumActions && "invalid action");
+
+    size_t Index = static_cast<int>(a) * NumStates + s;
+
+    std::cerr << "Index = " << Index << "\n";
+    return Index;
+  }
+
   gsl_vector* theta;
 };
 
 ////////////////////////////////////////////////
 
 #include <random>
+
+template<typename CRITIC,typename Q, typename RANDOM_GENERATOR>
+void run_experiment(CRITIC& critic, const Q& q, RANDOM_GENERATOR& gen,
+                    const double EPSILON, int NumEpisodes) {
+  Simulator Sim;
+  int MaxEpisodeSteps = 10;
+  double CurrentEpsilon = EPSILON;
+
+  // TODO: these iterators should be part of the Q table!!
+  using ActionIteratorTy = rl::enumerator<Simulator::action_type>;
+  auto action_begin = ActionIteratorTy(act::Begin);
+  auto action_end = action_begin + act::Size;
+
+  // using StateIteratorTy = rl::enumerator<Simulator::observation_type>;
+  // auto state_begin  = StateIteratorTy(env::Begin);
+  // auto state_end    = state_begin + env::Size;
+
+  auto learning_policy  = rl::policy::epsilon_greedy<Q, ActionIteratorTy, RANDOM_GENERATOR>
+                            (q, CurrentEpsilon, action_begin, action_end, gen);
+
+  for (int epi = 0; epi < NumEpisodes; epi++) {
+    // Sim.restart();
+    rl::episode::learn(Sim, learning_policy, critic, MaxEpisodeSteps);
+  }
+}
 
 // this one uses SARSA (on-policy)
 // NOTE: compile with,
@@ -139,7 +184,7 @@ class QTable {
 int main () {
   std::random_device rd;
   std::mt19937 gen(rd());
-  using TableTy = QTable<env::Environment, env::Size, act::Action, act::Size>;
+  using TableTy = QTable<Environment::phase_type, Environment::size, act::Action, act::Size>;
   TableTy Q;
 
   const double GAMMA = .9;
@@ -150,4 +195,6 @@ int main () {
           GAMMA,ALPHA,
           TableTy::Q,
           TableTy::GradQ);
+
+  run_experiment(critic, Q, gen, EPSILON, 1);
 }
