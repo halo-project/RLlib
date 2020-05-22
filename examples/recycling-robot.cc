@@ -49,19 +49,80 @@ public:
     }
 };
 
+
 class RobotSimulator : public rl::Simulator<World, Action> {
 public:
-    RobotSimulator() : rl::Simulator<World, Action>(0.0, World::initial) {}
+    RobotSimulator() : rl::Simulator<World, Action>(0.0, World::initial), rd(), gen(rd()) {}
+
+    void transition(observation_type s, reward_type r) {
+        State = s;
+        LastActionReward = r;
+    }
+
+    /// @returns true with the given probability in [0, 1]
+    bool trueWithProbability(double probabilityTrue) {
+        std::uniform_real_distribution<double> dist(0, 1); // returns [a, b)
+        return dist(gen) < probabilityTrue;
+    }
 
     void timeStep(const action_type &a) override {
+        if (State == World::HighBattery) {
 
+            if (a == Action::Search)
+                return trueWithProbability(alpha)
+                        ? transition(World::HighBattery, RewardSearch)
+                        : transition(World::LowBattery, RewardSearch);
+
+            if (a == Action::Wait)
+                return trueWithProbability(1.0)
+                        ? transition(World::HighBattery, RewardWait)
+                        : transition(World::LowBattery, RewardWait);
+
+            if (a == Action::Recharge)
+                // TODO: should we give a penalty or return "bad action" for this case?? will the runner understand?
+                return transition(World::HighBattery, RewardBatteryDie);
+
+        } else if (State == World::LowBattery) {
+
+            if (a == Action::Search)
+                return trueWithProbability(beta)
+                        ? transition(World::LowBattery, RewardSearch)
+                        : transition(World::HighBattery, RewardBatteryDie);
+
+            if (a == Action::Wait)
+                return trueWithProbability(1.0)
+                        ? transition(World::LowBattery, RewardWait)
+                        : transition(World::HighBattery, RewardWait);
+
+            if (a == Action::Recharge)
+                return trueWithProbability(1.0)
+                        ? transition(World::HighBattery, RewardRecharge)
+                        : transition(World::LowBattery, RewardRecharge);
+
+        }
+
+        assert(false && "bad state or action");
     }
+
+private:
+
+    std::random_device rd;
+    std::mt19937 gen;
+
+    // probabilities to adjust the model
+    double alpha = .95; // probabilty of battery remaining high while searching in high state
+    double beta = .45; // probability of battery remaining low while searching in low state
+
+    reward_type RewardSearch = 1.; // r_search
+    reward_type RewardWait = .0; // r_wait
+    reward_type RewardBatteryDie = -2.;
+    reward_type RewardRecharge = .0;
 };
 
 // Let us define the parameters.
-#define paramGAMMA   .99
-#define paramALPHA   .05
-#define paramEPSILON .7
+#define paramGAMMA   .99    // discount rate
+#define paramALPHA   .05    // step size
+#define paramEPSILON .7     // how greedy we should be in selection actions
 
 
 
@@ -98,7 +159,11 @@ int main(int argc, char* argv[]) {
     // learned Q-function with a geedy policy.
     double epsilon       = paramEPSILON;
     auto learning_policy = rl::policy::epsilon_greedy(q,epsilon,action_begin,action_end, gen);
-    auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
+
+    // auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
+    double test_epsilon = 0.9;
+    auto test_policy = rl::policy::epsilon_greedy(q,test_epsilon,action_begin,action_end, gen);
+
 
     // We intend to learn q on-line, by running episodes, and updating a
     // critic from the transition we get during the episodes. Let us use
@@ -112,8 +177,8 @@ int main(int argc, char* argv[]) {
 
 
     // Let us run episodes with the agent that learns the Q-values.
-    const int MAX_EPISODE_LENGTH = 10; // was 0 for unbounded until it reaches a terminal state.
-    const int MAX_EPISODES = 1000; // was 10000
+    const int MAX_EPISODE_LENGTH = 1000; // was 0 for unbounded until it reaches a terminal state.
+    const int MAX_EPISODES = 20000; // was 10000
     std::cout << "Learning " << std::endl
         << std::endl;
 
