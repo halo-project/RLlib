@@ -6,6 +6,7 @@
 #include <gsl/gsl_vector.h>
 
 #include "QTable.h"
+#include "Transition.h"
 
 // This is the rl header
 #include <rl.hpp>
@@ -20,13 +21,19 @@ namespace act {
     const Action begin = Action::Wait; // the one assigned to index 0
 } // end namespace act
 
+namespace std {
+    std::string to_string(act::Action a) {
+        return "TODO2";
+    }
+}
+
 // These are useful typedefs
 class World {
 public:
     // standard, required members
     using phase_type = int;
     static constexpr phase_type start = 0;
-    static constexpr int size = 50;
+    static constexpr int size = 5;
 };
 
 // for the robot. this name is kind of hard-coded.
@@ -46,15 +53,11 @@ class Simulator {
   void timeStep(const action_type& Act) {
 
     // TODO: actually perform the action!
-
-    std::cout << "took action " << static_cast<int>(Act)
-              << ", yielding environment " << State
-              << ", with reward = " << LastActionReward
-              << "\n";
+    LastActionReward = -2.0 * ( 1.0 + static_cast<double>(Act) );
   }
 
   // I think these members are _not_ required to use the library
-  // but are useful for episodic tasks.
+  // but are useful for episodic tasks and testing.
   void restart() {
       State = World::start;
   }
@@ -67,26 +70,6 @@ class Simulator {
 typedef Simulator::reward_type                               Reward;
 typedef Simulator::observation_type                          S;
 typedef Simulator::action_type                               A;
-
-// In reinforcement learning, the main object used for learning is a
-// state transition. Let us use our own type to store the transition
-// elements.
-struct Transition {
-    S      s;
-    A      a;
-    Reward r;
-    S      s_; // read s_ as s'
-    bool   is_terminal;
-};
-
-// This functions makes a transition from its elements.
-Transition make_transition(S s, A a, Reward r, S s_) {
-    return {s,a,r,s_,false};
-}
-
-Transition make_terminal_transition(S s, A a, Reward r) {
-    return {s,a,r,s /* unused */,true};
-}
 
 // Let us define the parameters.
 #define paramGAMMA   .99
@@ -184,28 +167,28 @@ int main(int argc, char* argv[]) {
     //     << std::endl;
 
 
-    return 0;
-
     // Let us be greedy on the policy we have found, using the greedy
     // agent to run an episode.
     // simulator.restart();
-    // unsigned int nb_steps = rl::episode::run(simulator,test_policy,0);
+    // unsigned int nb_steps = rl::episode::run(simulator,test_policy,MAX_EPISODE_LENGTH);
     // std::cout << "Best policy episode ended after " << nb_steps << " steps." << std::endl;
 
-    // // We can also gather the transitions from an episode into a collection.
-    // std::vector<Transition> transition_set;
-    // simulator.restart();
-    // nb_steps = rl::episode::run(simulator,test_policy,
-    //         std::back_inserter(transition_set),
-    //         make_transition,make_terminal_transition,
-    //         0);
-    // std::cout << std::endl
-    //     << "Collected transitions :" << std::endl
-    //     << "---------------------" << std::endl
-    //     << nb_steps << " == " << transition_set.size() << std::endl
-    //     << std::endl;
-    // for(auto& t : transition_set)
-    //     std::cout << t << std::endl;
-    // return 0;
+    // We can also gather the transitions from an episode into a collection.
+    using TransitionTy = Transition<S, A, Reward>;
+    std::vector<TransitionTy> transition_set;
+    simulator.restart();
+    unsigned int nb_steps = rl::episode::run(simulator,test_policy,
+            std::back_inserter(transition_set),
+            TransitionTy::make,TransitionTy::make_terminal,
+            MAX_EPISODE_LENGTH);
+    std::cout << std::endl
+        << "Collected transitions :" << std::endl
+        << "---------------------" << std::endl
+        << nb_steps << " == " << transition_set.size() << std::endl
+        << std::endl;
+    for(auto& t : transition_set)
+        std::cout << t << std::endl;
+
+    return 0;
 }
 

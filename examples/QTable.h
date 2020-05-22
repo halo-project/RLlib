@@ -30,9 +30,9 @@ class QTable {
     gsl_vector_free(theta);
   }
 
-  /// Creates an independent function object that maintains a reference to
-  /// the table, and can perform lookups. The destruction of the function object
-  /// will _not_ destroy the table.
+  /// Creates an independent function object that maintains a copy of the pointer to
+  /// the table so that it can perform lookups. Importantly, the destruction of the
+  /// function object will _not_ destroy the table.
   std::function<double(State,Action)> curriedQ() {
     return std::bind(Q, theta, std::placeholders::_1, std::placeholders::_2);
   }
