@@ -8,32 +8,37 @@
 #include "QTable.h"
 #include "Transition.h"
 
-// This is the rl header
 #include <rl.hpp>
 
-namespace act {
-    enum class Action {
+class Action {
+public:
+    enum Kind {
         Wait=0,
         Search=1,
         Recharge=2
     };
-    constexpr size_t size = 3;
-    const Action begin = Action::Wait; // the one assigned to index 0
-} // end namespace act
+    using type = Kind;
+    static constexpr size_t size = 3;
+    static const Kind begin = Kind::Wait; // the one assigned to index 0
 
-namespace std {
-    std::string to_string(act::Action a) {
-        return "TODO2";
+    static std::string to_string(Kind K) {
+        switch (K) {
+            case Wait: return "Wait";
+            case Search: return "Search";
+            case Recharge: return "Recharge";
+            default: return "???";
+        };
     }
-}
+};
 
 // These are useful typedefs
 class World {
 public:
     // standard, required members
     using phase_type = int;
-    static constexpr phase_type start = 0;
-    static constexpr int size = 5;
+    static constexpr phase_type begin = 0; // the one assigned to index 0
+    static constexpr phase_type initial = 0; // the starting phase for running a simulation.
+    static constexpr int size = 2;
 };
 
 // for the robot. this name is kind of hard-coded.
@@ -42,7 +47,7 @@ class Simulator {
   // standard, required members
   using reward_type = double;
   using observation_type = World::phase_type; // aka state_type
-  using action_type = act::Action;
+  using action_type = Action::type;
 
   const observation_type& sense() const {
     return State;
@@ -59,11 +64,11 @@ class Simulator {
   // I think these members are _not_ required to use the library
   // but are useful for episodic tasks and testing.
   void restart() {
-      State = World::start;
+      State = World::initial;
   }
 
   private:
-    observation_type State = World::start;
+    observation_type State = World::initial;
     reward_type LastActionReward = 0.0;
 };
 
@@ -86,28 +91,19 @@ int main(int argc, char* argv[]) {
 
     // We need to provide iterators for enumerating all the state and action
     // values. This can be done easily from an enumerators.
-    auto action_begin = rl::enumerator<A>(act::begin);
-    auto action_end   = action_begin + act::size;
-    auto state_begin  = rl::enumerator<S>(World::start);
-    auto state_end    = state_begin + World::size;
+    auto action_begin = rl::enumerator<A>(Action::begin);
+    auto action_end   = action_begin + Action::size;
+    // auto state_begin  = rl::enumerator<S>(World::begin);
+    // auto state_end    = state_begin + World::size;
 
 
     // This is the dynamical system we want to control.
     // Param      param;
     Simulator  simulator;
-    using TableTy = QTable<S, World::size, A, act::size>;
+    using TableTy = QTable<S, World::size, A, Action::size>;
     TableTy Table;
 
-    // Our Q-function is determined by some vector parameter. It is a
-    // gsl_vector since we use the GSL-based algorithm provided by the
-    // library.
-    // gsl_vector* theta = gsl_vector_alloc(TABULAR_Q_CARDINALITY);
-    // gsl_vector_set_zero(theta);
     gsl_vector* theta = Table.getTable();
-
-    // If we need to use the Q-function parametrized by theta as q(s,a),
-    // we only have to bind our q_from_table function and get a
-    // functional object.
     auto q = Table.curriedQ();
 
     // Let us now define policies, related to q. The learning policy
@@ -118,7 +114,7 @@ int main(int argc, char* argv[]) {
     auto test_policy     = rl::policy::greedy(q,action_begin,action_end);
 
     // We intend to learn q on-line, by running episodes, and updating a
-    // critic fro the transition we get during the episodes. Let us use
+    // critic from the transition we get during the episodes. Let us use
     // some GSL-based critic for that purpose.
     auto critic = rl::gsl::sarsa<S,A>(theta,
             paramGAMMA,paramALPHA,
@@ -128,7 +124,7 @@ int main(int argc, char* argv[]) {
     // We have now all the elements to start experiments.
 
 
-    // Let us run 10000 episodes with the agent that learns the Q-values.
+    // Let us run episodes with the agent that learns the Q-values.
     const int MAX_EPISODE_LENGTH = 10; // was 0 for unbounded until it reaches a terminal state.
     const int MAX_EPISODES = 1000; // was 10000
     std::cout << "Learning " << std::endl
@@ -152,29 +148,8 @@ int main(int argc, char* argv[]) {
         << theta << std::endl
         << std::endl;
 
-
-    // Let us define v as v(s) = max_a q(s_a) with a labda function.
-    // auto v = [&action_begin,&action_end,&q](S s) -> double {return rl::max(std::bind(q,s,_1),
-    //         action_begin,
-    //         action_end);};
-    // // We can draw the Value function a image file.
-    // auto v_range = rl::range(v,state_begin,state_end);
-    // std::cout << std::endl
-    //     << " V in [" << v_range.first << ',' << v_range.second << "]." << std::endl
-    //     << std::endl;
-    // // World::draw("V-overview",0,v,v_range.first,v_range.second);
-    // std::cout << "Image file \"V-overview-000000.ppm\" generated." << std::endl
-    //     << std::endl;
-
-
-    // Let us be greedy on the policy we have found, using the greedy
-    // agent to run an episode.
-    // simulator.restart();
-    // unsigned int nb_steps = rl::episode::run(simulator,test_policy,MAX_EPISODE_LENGTH);
-    // std::cout << "Best policy episode ended after " << nb_steps << " steps." << std::endl;
-
     // We can also gather the transitions from an episode into a collection.
-    using TransitionTy = Transition<S, A, Reward>;
+    using TransitionTy = Transition<S, Action, Reward>;
     std::vector<TransitionTy> transition_set;
     simulator.restart();
     unsigned int nb_steps = rl::episode::run(simulator,test_policy,

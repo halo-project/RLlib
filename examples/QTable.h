@@ -42,12 +42,13 @@ class QTable {
 
   // NOTE: for some reason, theta needs to be given, but it is not used.
   static void GradQ(const gsl_vector* theta, gsl_vector* grad_theta_sa, State s, Action a) {
-    assert(grad_theta_sa->size > 0);
+    assert(grad_theta_sa && grad_theta_sa->size > 0 && "invalid / freed vector");
     gsl_vector_set_basis(grad_theta_sa, ComputeIndex(s, a));
   }
 
+  // table access, not specific to a table
   static double Q(const gsl_vector* theta, State s, Action a) {
-    assert(theta->size > 0);
+    assert(theta && theta->size > 0 && "invalid / freed vector");
     return gsl_vector_get(theta, ComputeIndex(s, a));
   }
 
