@@ -40,6 +40,7 @@
 #include <rlQLearning.hpp>
 #include <rlQTable.hpp>
 #include <rlSARSA.hpp>
+#include <rlSimulator.hpp>
 #include <rlTD.hpp>
 #include <rlActorCritic.hpp>
 #include <rlTransition.hpp>
